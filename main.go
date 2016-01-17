@@ -1,25 +1,24 @@
 package galwaybus
 
 import (
-	//"fmt"
-	"encoding/json"
-	"net/http"
-	"os"
-	"strconv"
-	"strings"
+        "net/http"
+        "os"
+        "strings"
+        "encoding/json"
+        "strconv"
+        "io/ioutil"
 
-	"sqbu-github.cisco.com/jgoecke/go-spark"
+	      "sqbu-github.cisco.com/jgoecke/go-spark"
 
-	"github.com/go-martini/martini"
-	"github.com/martini-contrib/binding"
-	"github.com/martini-contrib/render"
+        "github.com/go-martini/martini"
+	      "github.com/martini-contrib/render"
+	      "github.com/martini-contrib/binding"
 
-	"google.golang.org/appengine"
-	"google.golang.org/appengine/log"
-	"google.golang.org/appengine/urlfetch"
-
-	"github.com/parnurzeal/gorequest"
+        "google.golang.org/appengine"
+      	"google.golang.org/appengine/log"
+        "google.golang.org/appengine/urlfetch"
 )
+
 
 type SparkEvent struct {
 	Id          string `json:"id" binding:"required"`
@@ -30,62 +29,65 @@ type SparkEvent struct {
 }
 
 type BusRoute struct {
-	Id        int    `json:"timetable_id" binding:"required"`
-	LongName  string `json:"long_name" binding:"required"`
-	ShortName string `json:"short_name" binding:"required"`
+  Id          int `json:"timetable_id" binding:"required"`
+	LongName    string `json:"long_name" binding:"required"`
+  ShortName   string `json:"short_name" binding:"required"`
+
 }
+
 
 // init is called before the application starts.
 func init() {
 
-	m := martini.Classic()
-	m.Use(render.Renderer())
+  m := martini.Classic()
+  m.Use(render.Renderer())
 
-	m.Use(func(res http.ResponseWriter, req *http.Request) {
+  m.Use(func(res http.ResponseWriter, req *http.Request) {
 		authorization := &spark.Authorization{AccessToken: os.Getenv("SPARK_TOKEN")}
 		spark.InitClient(authorization)
-
 		ctx := appengine.NewContext(req)
 		spark.SetHttpClient(urlfetch.Client(ctx), ctx)
-		log.Infof(ctx, "after setting http client, token = %s\n", os.Getenv("SPARK_TOKEN"))
 	})
 
-	m.Post("/spark", binding.Json(SparkEvent{}), func(sparkEvent SparkEvent, res http.ResponseWriter, req *http.Request, r render.Render) {
+  m.Post("/spark", binding.Json(SparkEvent{}), func(sparkEvent SparkEvent, res http.ResponseWriter, req *http.Request, r render.Render) {
 		ctx := appengine.NewContext(req)
+    client := urlfetch.Client(ctx)
 
-		//log.Infof(ctx, "Message = %v", sparkEvent)
 
-		message := spark.Message{ID: sparkEvent.Id}
+    message := spark.Message{ID: sparkEvent.Id}
 		message.Get()
 		log.Infof(ctx, message.Text)
 
-		if strings.HasPrefix(message.Text, "/") {
-			s := strings.Split(sparkEvent.Text, " ")
+    if strings.HasPrefix(message.Text, "/") {
+      s := strings.Split(sparkEvent.Text, " ")
 
-			command := s[0]
-			log.Infof(ctx, "command = %s", command)
-			if command == "/routes" {
+      command := s[0]
+      log.Infof(ctx, "command = %s", command)
+      if command == "/routes" {
 
-				_, body, _ := gorequest.New().Get("http://galwaybus.herokuapp.com/routes.json").End()
-				log.Infof(ctx, "body = %s\n", body)
 
-				var routeMap map[string]BusRoute
-				json.Unmarshal([]byte(body), &routeMap)
+        resp, _ := client.Get("http://galwaybus.herokuapp.com/routes.json")
+        defer resp.Body.Close()
+        contents, _ := ioutil.ReadAll(resp.Body)
+        log.Infof(ctx, "body = %s\n", contents)
 
-				text := "Routes:\n\n"
-				for _, route := range routeMap {
-					text = text + strconv.Itoa(route.Id) + " " + route.LongName + "\n"
-				}
+        var routeMap map[string]BusRoute
+        json.Unmarshal([]byte(contents), &routeMap)
 
-				message := spark.Message{
+        text := "Routes:\n\n"
+        for _, route := range routeMap {
+            text = text + strconv.Itoa(route.Id) + " " + route.LongName + "\n"
+        }
+
+        message := spark.Message{
 					RoomID: sparkEvent.RoomId,
 					Text:   text,
 				}
 				message.Post()
-			}
-		}
+      }
+    }
 
-	})
+  })
 
-	http.Handle("/", m)
+  http.Handle("/", m)
 }
