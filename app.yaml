@@ -1,0 +1,11 @@
+application: transit-galway
+version: 2
+runtime: go
+api_version: go1
+
+handlers:
+  - url: /.*
+    script: _go_app
+
+env_variables:
+  SPARK_TOKEN: 'M2VjMGFlMDMtNmM4ZS00NzA4LTgzOTYtMzliZTNjNzg1MGU2ODY1NDMzNzItMDRl'
